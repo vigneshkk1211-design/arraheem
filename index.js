@@ -3,6 +3,19 @@ const qrcode = require('qrcode-terminal');
 const fs = require('fs');
 const path = require('path');
 const pino = require('pino');
+const express = require('express');
+
+// Render port requirement-kaga Express server-ai start seyyuvathu
+const app = express();
+const PORT = process.env.PORT || 3000;
+
+app.get('/', (req, res) => {
+    res.send('Vengalakshmi TV Agencies WhatsApp Bot is running smoothly!');
+});
+
+app.listen(PORT, () => {
+    console.log(`Express server is running on port ${PORT}`);
+});
 
 async function connectToWhatsApp() {
     console.log('WhatsApp inaippu thodangugirathu...');
