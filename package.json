@@ -1,0 +1,25 @@
+{
+  "name": "client_chatbot",
+  "version": "1.0.0",
+  "description": "WhatsApp Bot for Vengalakshmi TV Agencies Kallakurichi",
+  "main": "index.js",
+  "scripts": {
+    "start": "node index.js",
+    "dev": "node --watch index.js"
+  },
+  "keywords": [
+    "whatsapp",
+    "whatsapp-web.js",
+    "chatbot",
+    "vengalakshmi"
+  ],
+  "author": "",
+  "license": "ISC",
+  "dependencies": {
+    "@whiskeysockets/baileys": "^6.7.13",
+    "axios": "^1.7.9",
+    "dotenv": "^16.4.7",
+    "pino": "^10.4.0",
+    "qrcode-terminal": "^0.12.0"
+  }
+}

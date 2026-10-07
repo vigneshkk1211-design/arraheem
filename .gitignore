@@ -1,0 +1,17 @@
+# Dependencies
+node_modules/
+
+# WhatsApp Web Session Storage
+.wwebjs_auth/
+.wwebjs_cache/
+
+# Local Environment & Secrets
+.env
+*.log
+
+# Chat state persistence (optional to track or ignore, best kept local)
+chat_states.json
+
+# OS files
+.DS_Store
+Thumbs.db
