@@ -2,6 +2,17 @@ const { default: makeWASocket, useMultiFileAuthState, DisconnectReason } = requi
 const qrcode = require('qrcode-terminal');
 const fs = require('fs');
 const path = require('path');
+const express = require('express'); // Added for Render Web Service Port Binding
+
+// Express setup to satisfy Render port detection
+const app = express();
+const PORT = process.env.PORT || 3000;
+app.get('/', (req, res) => {
+    res.send('Arraheem WhatsApp Chatbot is running live!');
+});
+app.listen(PORT, () => {
+    console.log(`Server is listening on port ${PORT}`);
+});
 
 // Store Configurations & Admin Number
 const STORE_NAME = "Arraheem Furnitures & Home Appliances";
