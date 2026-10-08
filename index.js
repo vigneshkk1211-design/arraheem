@@ -1,167 +1,206 @@
-const { Client, LocalAuth, MessageMedia } = require('whatsapp-web.js');
+const { default: makeWASocket, useMultiFileAuthState, DisconnectReason } = require('@whiskeysockets/baileys');
 const qrcode = require('qrcode-terminal');
 const path = require('path');
+const fs = require('fs');
+const pino = require('pino');
 
-// 1. Initialize WhatsApp Client with Local Session Auth
-const client = new Client({
-    authStrategy: new LocalAuth(),
-    puppeteer: {
-        headless: true,
-        args: ['--no-sandbox', '--disable-setuid-sandbox']
-    }
-});
+// பயனர்களின் முன்பதிவு நிலை மற்றும் மொழி விருப்பத்தை (Language Preference) சேமிக்க
+const userSessions = {};
 
-// 2. Generate QR Code in Terminal for Login
-client.on('qr', (qr) => {
-    console.log('SCAN THIS QR CODE TO LOGIN:');
-    qrcode.generate(qr, { small: true });
-});
+// 🔴 அட்மின் வாட்ஸ்அப் நம்பர் (7200537033)
+const ADMIN_PHONE = '917200537033@s.whatsapp.net';
 
-// 3. Ready Event after Successful Login
-client.on('ready', () => {
-    console.log('WhatsApp Client is ready and successfully logged in!');
-});
+async function connectToWhatsApp() {
+    const { state, saveCreds } = await useMultiFileAuthState('auth_info_baileys');
 
-// 4. Message Handler Function (Bilingual Tamil & English Support)
-async function handleIncomingMessage(client, chatId, userMessage) {
-    const text = userMessage.trim().toLowerCase();
-    const isTamil = /[\u0B80-\u0BFF]/.test(text);
+    const sock = makeWASocket({
+        auth: state,
+        logger: pino({ level: 'silent' }),
+        printQRInTerminal: false
+    });
 
-    // Welcome Message Trigger (Hi, Hello, Menu, Start, Vanakkam)
-    if (text === 'hi' || text === 'hello' || text === 'menu' || text === 'start' || text === 'வணக்கம்') {
-        const imagePath = path.join(__dirname, 'images', 'Welcome.png'); // Updated to .png
-        const media = MessageMedia.fromFilePath(imagePath);
+    sock.ev.on('connection.update', (update) => {
+        const { connection, lastDisconnect, qr } = update;
+        if (qr) {
+            console.log('SCAN THIS QR CODE TO LOGIN WITH YOUR WHATSAPP:');
+            qrcode.generate(qr, { small: true });
+        }
+        if (connection === 'close') {
+            const shouldReconnect = lastDisconnect.error?.output?.statusCode !== DisconnectReason.loggedOut;
+            if (shouldReconnect) connectToWhatsApp();
+        } else if (connection === 'open') {
+            console.log('WhatsApp Bot is ready with Strict Language Session & Last Contact Option!');
+        }
+    });
 
-        const caption = isTamil ?
-            `🌿 வணக்கம்! ராஜேஷ்வரி நியூட்ரிஷன் சென்டர், கள்ளக்குறிச்சிக்கு உங்களை வரவேற்கிறோம்! 🌿
+    sock.ev.on('creds.update', saveCreds);
 
-ஊட்டச்சத்து, எடை மேலாண்மை, உடற்பயிற்சி, வாழ்க்கை முறை வழிகாட்டுதல் மற்றும் எங்களது கோச்சைத் தொடர்புகொள்ள நான் உங்களுக்கு உதவத் தயாராக இருக்கிறேன்.
-✨ இன்று நான் உங்களுக்கு எப்படி உதவ வேண்டும்?
+    sock.ev.on('messages.upsert', async ({ messages }) => {
+        const msg = messages[0];
+        if (!msg.message || msg.key.fromMe) return;
 
-🌱 சேவைகள் (Services)
-🥗 ஊட்டச்சத்து திட்டங்கள் (Nutrition Programs)
-⚖️ எடை மேலாண்மை (Weight Management)
-💪 உடற்பயிற்சி மற்றும் வாழ்க்கை முறை (Fitness & Lifestyle)
+        const chatId = msg.key.remoteJid;
+        const messageType = Object.keys(msg.message)[0];
 
-தொடர மேலே உள்ள விருப்பங்களில் ஒன்றை அனுப்பவும். 😊` :
-            `🌿 Hi 👋 Welcome to Rajeshwari Nutrition Center, Kallakurichi! 🌿
+        let userMessage = '';
+        if (messageType === 'conversation') {
+            userMessage = msg.message.conversation;
+        } else if (messageType === 'extendedTextMessage') {
+            userMessage = msg.message.extendedTextMessage.text;
+        }
 
-I’m here to help you with nutrition, weight management, fitness, lifestyle guidance, location details, and connecting with our coach.
-✨ How can I assist you today?
+        const text = userMessage.trim();
+        const lowerText = text.toLowerCase();
 
-🌱 Services 
-🥗 Nutrition Programs
-⚖️ Weight Management
-💪 Fitness & Lifestyle
+        // புதிய பயனராக இருந்தால் மொழியைக் கண்டறிந்து சேமித்தல் (Session Creation)
+        if (!userSessions[chatId]) {
+            const isTamilInput = /[\u0B80-\u0BFF]/.test(text) || lowerText.includes('வணக்கம்') || lowerText.includes('சேவைகள்') || lowerText.includes('ஊட்டச்சத்து');
+            userSessions[chatId] = {
+                language: isTamilInput ? 'ta' : 'en',
+                step: null
+            };
+        }
 
-Please select an option above to continue. 😊`;
+        const currentLang = userSessions[chatId].language;
 
-        await client.sendMessage(chatId, media, { caption: caption });
-        return;
-    }
+        // 1. முன்பதிவு நிலை நடந்து கொண்டிருந்தால் அதை நிர்வகித்தல்
+        if (userSessions[chatId].step) {
+            const currentState = userSessions[chatId].step;
 
-    // Services Option
-    if (text.includes('services') || text.includes('🌱 services') || text.includes('சேவைகள்')) {
-        const imagePath = path.join(__dirname, 'images', 'service.png'); // Updated to .png
-        const media = MessageMedia.fromFilePath(imagePath);
+            if (currentState === 'WAITING_FOR_NAME') {
+                userSessions[chatId].name = text;
+                userSessions[chatId].step = 'WAITING_FOR_TIME';
 
-        const caption = isTamil ?
-            `🌱 **எங்கள் சேவைகள்** 🌱
+                const promptTimeText = (currentLang === 'ta') ?
+                    `மிகவும் நன்றி, *${text}*! 🌟\n\nநீங்கள் எந்த தேதியில் மற்றும் எந்த நேரத்தில் உடல் கட்டமைப்பு பரிசோதனைக்கு வர விரும்புகிறீர்கள்? (உதாரணமாக: நாளை காலை 8:30 மணி) நேரத்தைத் பதிவிடவும்:` :
+                    `Thank you so much, *${text}*! 🌟\n\nAt what date and time would you like to visit for your Body Composition Analysis? (e.g., Tomorrow 8:30 AM) Please provide the time slot:`;
 
-எஸ். ராஜேஷ்வரி கள்ளக்குறிச்சியைச் சேர்ந்த சுதந்திரமான வெல்னெஸ் கோச் ஆவார். ஹெர்பலைஃப் நியூட்ரிஷன் மூலம் முழுமையான ஆரோக்கிய தீர்வுகளை நாங்கள் வழங்குகிறோம்:
-• தனிப்பயனாக்கப்பட்ட உடல் எடை குறைப்பு திட்டங்கள்
-• ஆரோக்கியமான உடல் எடை அதிகரிப்பு திட்டங்கள்
-• காலை சமூக உடற்பயிற்சி சந்திப்புகள்
-• உடல் கட்டமைப்பு கண்காணிப்பு
+                await sock.sendMessage(chatId, { text: promptTimeText });
+                return;
+            }
+            else if (currentState === 'WAITING_FOR_TIME') {
+                const userName = userSessions[chatId].name;
+                const appointmentTime = text;
+                const userPhone = chatId.split('@')[0];
 
-📍 **இடம்:** ஹெர்பலைஃப் நியூட்ரிஷன் சென்டர், 2A, கந்தபொடி சந்து, OTTO துணிக்கடை & HDFC பேங்க் எதிரில், சேலம் மெயின் ரோடு அருகில், கள்ளக்குறிச்சி, தமிழ்நாடு 606202.
-⏰ **நேரம்:** திங்கள் முதல் ஞாயிறு வரை, காலை 7:30 மணி முதல் 10:30 மணி வரை.` :
-            `🌱 **Our Core Services** 🌱
+                // வாடிக்கையாளருக்கு உறுதிப்படுத்தல் செய்தி (Success Message)
+                const successText = (currentLang === 'ta') ?
+                    `🎉 *வாழ்த்துகள்! உங்களது உடல் பரிசோதனை முன்பதிவு வெற்றிகரமாக உறுதி செய்யப்பட்டது!* 🎉\n\n👤 **பெயர்:** ${userName}\n⏰ **நேரம்:** ${appointmentTime}\n📍 **இடம்:** ராஜேஷ்வரி நியூட்ரிஷன் சென்டர், சேலம் மெயின் ரோடு அருகில், கள்ளக்குறிச்சி.\n\nஉங்களின் ஆரோக்கிய பயணத்தில் உங்களைச் சந்திப்பதில் பெருமகிழ்ச்சி அடைகிறோம்!` :
+                    `🎉 *Congratulations! Your Appointment is Successfully Confirmed!* 🎉\n\n👤 **Name:** ${userName}\n⏰ **Time Slot:** ${appointmentTime}\n📍 **Location:** Rajeshwari Nutrition Center, Near Salem Main Road, Kallakurichi.\n\nWe are excited to welcome you on your wellness journey!`;
 
-S. Rajeshwari is an independent Wellness Coach based in Kallakurichi. We provide comprehensive health and wellness solutions powered by Herbalife Nutrition:
-• Personalized Fat Loss Programs
-• Healthy Weight Gain Programs
-• Morning Community Fitness Meetups
-• Metabolic Body Composition Monitoring
+                await sock.sendMessage(chatId, { text: successText });
 
-📍 **Visit Location:** Herbalife Nutrition Center, 2A, Kanthapodi Lane, Opposite OTTO Clothing & HDFC Bank, Near Salem Main Road, Kallakurichi, Tamil Nadu 606202.
-⏰ **Timings:** Monday to Sunday, 7:30 AM – 10:30 AM.`;
+                // 🔴 அட்மினுக்கு (7200537033) முன்பதிவு விவரங்களை அனுப்புதல்
+                const adminAlertText = `🔔 *புதிய உடல் பரிசோதனை முன்பதிவு வந்துள்ளது!* 🔔\n\n👤 **வாடிக்கையாளர் பெயர்:** ${userName}\n📞 **போன் நம்பர்:** +${userPhone}\n⏰ **குறிக்கப்பட்ட நேரம்:** ${appointmentTime}\n\nதயவுசெய்து கவனிக்கவும்!`;
+                await sock.sendMessage(ADMIN_PHONE, { text: adminAlertText });
 
-        await client.sendMessage(chatId, media, { caption: caption });
-    }
-    // Nutrition Programs Option
-    else if (text.includes('nutrition programs') || text.includes('🥗 nutrition programs') || text.includes('ஊட்டச்சத்து')) {
-        const imagePath = path.join(__dirname, 'images', 'program.png'); // Updated to .png
-        const media = MessageMedia.fromFilePath(imagePath);
+                // நிலையை மீட்டமைத்தல் (Reset Step)
+                userSessions[chatId].step = null;
+                delete userSessions[chatId].name;
+                return;
+            }
+        }
 
-        const caption = isTamil ?
-            `🥗 **ஊட்டச்சத்து திட்டங்கள்** 🥗
+        // 2. முன்பதிவு தொடங்குவதற்கான தூண்டுதல் (Trigger) - Option 5
+        if (lowerText.includes('appointment') || lowerText.includes('book') || lowerText.includes('பரிசோதனை') || lowerText.includes('முன்பதிவு') || lowerText === '5') {
+            userSessions[chatId].step = 'WAITING_FOR_NAME';
+            const bookPrompt = (currentLang === 'ta') ?
+                `🌿 *இலவச உடல் கட்டமைப்பு பரிசோதனை முன்பதிவு* 🌿\n\nஉங்கள் உடல் எடையைக் துல்லியமாகக் கண்காணிக்க எங்களது மையத்திற்கு உங்களை வரவேற்கிறோம்!\n\nதயவுசெய்து உங்களது **முழுப் பெயரை (Full Name)** இங்கே பதிவிடவும்:` :
+                `🌿 *Free Body Composition Analysis Booking* 🌿\n\nWe welcome you to accurately monitor your health and fitness goals!\n\nKindly enter your **Full Name** below to proceed:`;
 
-எங்களது ஊட்டச்சத்து ஆலோசனைகள் மற்றும் ஆரோக்கிய கண்காணிப்பு திட்டங்கள் ஹெர்பலைஃப் நியூட்ரிஷன் மூலம் உங்கள் உடலின் தேவைக்கேற்ப வடிவமைக்கப்பட்டுள்ளன.
-• **பொன்மொழி:** "உணவே மருந்து, மருந்தே உணவு".
-• நிலையான முடிவுகளைப் பெற பிரத்யேக உணவுத் திட்டங்கள் மற்றும் ஊட்டச்சத்து கண்காணிப்பு.
+            await sock.sendMessage(chatId, { text: bookPrompt });
+            return;
+        }
 
-📞 **தொடர்புக்கு (கோச் எஸ். ராஜேஷ்வரி):** +91 97871 05903 / +91 63839 96873` :
-            `🥗 **Nutrition Programs** 🥗
+        // Helper function for sending images with captions
+        async function sendMediaMessage(subFolder, imageName, captionText) {
+            try {
+                const imagePath = path.join(__dirname, 'images', subFolder, imageName);
+                if (fs.existsSync(imagePath)) {
+                    const buffer = fs.readFileSync(imagePath);
+                    await sock.sendMessage(chatId, { image: buffer, caption: captionText });
+                } else {
+                    await sock.sendMessage(chatId, { text: captionText });
+                }
+            } catch (err) {
+                await sock.sendMessage(chatId, { text: captionText });
+            }
+        }
 
-Our nutritional counseling and health tracking programs are tailored to your body's needs, powered by Herbalife Nutrition. 
-• **Motto:** "Food is medicine, medicine is food".
-• Specialized meal replacement plans and customized nutritional tracking to help you achieve sustainable results.
+        // 3. Welcome Message (Unique & Language Based)
+        if (lowerText === 'hi' || lowerText === 'hello' || lowerText === 'menu' || lowerText === 'start' || lowerText === 'வணக்கம்' || lowerText === 'vanakkam') {
+            // புதிய மெசேஜுக்கு ஏற்ப மொழியை ரீ-செட் செய்ய
+            const isTamilInput = /[\u0B80-\u0BFF]/.test(text) || lowerText.includes('வணக்கம்');
+            userSessions[chatId].language = isTamilInput ? 'ta' : 'en';
+            const lang = userSessions[chatId].language;
 
-📞 **Contact Coach S. Rajeshwari:** +91 97871 05903 / +91 63839 96873`;
+            const welcomeText = (lang === 'ta') ?
+                `✨🌿 **ராஜேஷ்வரி நியூட்ரிஷன் சென்டருக்கு உங்களை அன்புடன் வரவேற்கிறோம்!** 🌿✨\n\nகள்ளக்குறிச்சியின் நம்பகமான ஆரோக்கிய மற்றும் உடற்பயிற்சி மையம். உங்களின் கனவு உடல் எடையை அடையவும், முழுமையான ஆரோக்கியத்தைப் பெறவும் நாங்கள் உங்களுக்குத் துணையாய் இருக்கிறோம்.\n\n🎯 **இன்று உங்களுக்கு எந்த சேவையில் வழிகாட்ட வேண்டும்? கீழே உள்ளவற்றில் ஒன்றைத் தேர்ந்தெடுக்கவும்:**\n\n🌱 **1. Services** (எங்கள் சேவைகள்)\n🥗 **2. Nutrition Programs** (ஊட்டச்சத்து திட்டங்கள்)\n⚖️ **3. Weight Management** (எடை மேலாண்மை)\n💪 **4. Fitness & Lifestyle** (உடற்பயிற்சி & வாழ்க்கை முறை)\n📅 **5. Appointment / முன்பதிவு** (இலவச உடல் பரிசோதனை)\n📍 **6. Address** (மையத்தின் முகவரி)\n📞 **7. Contact** (தொடர்புக்கு)\n\n*(உங்களுக்குத் தேவையான விருப்பத்தை அல்லது அதன் எண்ணைத் கீழே டைப் செய்யவும்)*` :
 
-        await client.sendMessage(chatId, media, { caption: caption });
-    }
-    // Weight Management Option
-    else if (text.includes('weight management') || text.includes('⚖️ weight management') || text.includes('எடை மேலாண்மை')) {
-        const imagePath = path.join(__dirname, 'images', 'weight.png'); // Updated to .png
-        const media = MessageMedia.fromFilePath(imagePath);
+                `✨🌿 **Welcome to Rajeshwari Nutrition Center!** 🌿✨\n\nKallakurichi's premier destination for complete wellness, vitality, and body transformation. We empower you to achieve sustainable health and peak physical fitness.\n\n🎯 **How can we elevate your wellness journey today? Choose an option below:**\n\n🌱 **1. Services**\n🥗 **2. Nutrition Programs**\n⚖️ **3. Weight Management**\n💪 **4. Fitness & Lifestyle**\n📅 **5. Appointment / Booking**\n📍 **6. Address**\n📞 **7. Contact Coach**\n\n*(Simply type your choice or the option number to explore)*`;
 
-        const caption = isTamil ?
-            `⚖️ **எடை மேலாண்மை** ⚖️
+            await sendMediaMessage('welcome', 'Welcome.png', welcomeText);
+            return;
+        }
 
-சுதந்திரமான வெல்னெஸ் கோச் எஸ். ராஜேஷ்வரியின் வழிகாட்டுதலுடன் உங்கள் ஆரோக்கிய இலக்குகளை அடையுங்கள்:
-• **தனிப்பயனாக்கப்பட்ட கொழுப்பு குறைப்பு:** பாதுகாப்பான மற்றும் முறையான கொழுப்பு குறைப்பு வழிகள்.
-• **ஆரோக்கியமான எடை அதிகரிப்பு:** தசை வளர்ச்சி மற்றும் உடல் எடை அதிகரிக்க சத்தான உணவுத் திட்டமிடல்.
-• **உடல் கட்டமைப்பு கண்காணிப்பு:** கள்ளக்குறிச்சி மையத்தில் காலை நேரத்தில் வழக்கமான உடல் மதிப்பீடுகள்.` :
-            `⚖️ **Weight Management** ⚖️
+        // 4. Core Features (Strictly based on session language)
+        if (lowerText.includes('services') || lowerText.includes('சேவைகள்') || lowerText === '1') {
+            const serviceText = (currentLang === 'ta') ?
+                `🌱 **எங்கள் முதன்மைச் சேவைகள்** 🌱\n\nஹெர்பலைஃப் நியூட்ரிஷன் மூலம் உங்களின் ஆரோக்கிய இலக்குகளை எட்ட நாங்கள் வழங்கும் பிரத்யேக சேவைகள்:\n• தனிப்பயனாக்கப்பட்ட உடல் எடை குறைப்பு திட்டங்கள்\n• ஆரோக்கியமான உடல் எடை மற்றும் தசை அதிகரிப்பு\n• காலை நேர சமூக உடற்பயிற்சி வகுப்புகள்\n• நவீன உடல் கட்டமைப்பு (Metabolic) பரிசோதனை` :
 
-Achieve your health goals with structured guidance from Independent Wellness Coach S. Rajeshwari:
-• **Personalized Fat Loss:** Safe, steady, and customized fat reduction routines.
-• **Healthy Weight Gain:** Nutritious meal planning for muscle mass and healthy weight increase.
-• **Metabolic Tracking:** Regular body composition evaluations during morning hours at our Kallakurichi hub.`;
+                `🌱 **Our Core Professional Services** 🌱\n\nPowered by Herbalife Nutrition, we provide comprehensive health solutions tailored to your unique body type:\n• Personalized Fat Loss & Transformation Programs\n• Healthy Weight Gain & Muscle Building\n• Energetic Morning Community Fitness Sessions\n• Advanced Metabolic Body Composition Monitoring`;
 
-        await client.sendMessage(chatId, media, { caption: caption });
-    }
-    // Fitness & Lifestyle Option
-    else if (text.includes('fitness') || text.includes('💪 fitness & lifestyle') || text.includes('உடற்பயிற்சி')) {
-        const imagePath = path.join(__dirname, 'images', 'principle.png'); // Updated to .png
-        const media = MessageMedia.fromFilePath(imagePath);
+            await sendMediaMessage('service', 'service.png', serviceText);
+        }
+        else if (lowerText.includes('nutrition') || lowerText.includes('ஊட்டச்சத்து') || lowerText === '2') {
+            const programText = (currentLang === 'ta') ?
+                `🥗 **ஊட்டச்சத்து மற்றும் உணவுத் திட்டங்கள்** 🥗\n\n*"உணவே மருந்து, மருந்தே உணவு"* - எங்களது பொன்மொழி.\n\nஉங்கள் உடலுக்குத் தேவையான சரியான சத்துக்களை வழங்கி, எனர்ஜியுடன் இருக்கச் செய்யும் பிரத்யேக உணவு மாற்றீட்டுத் திட்டங்கள் மற்றும் தனித்துவமான ஊட்டச்சத்து வழிகாட்டுதல் இங்கே வழங்கப்படுகிறது.` :
 
-        const caption = isTamil ?
-            `💪 **உடற்பயிற்சி மற்றும் வாழ்க்கை முறை** 💪
+                `🥗 **Specialized Nutrition Programs** 🥗\n\n*Motto: "Food is medicine, medicine is food."*\n\nAchieve optimal nourishment with our scientifically designed meal replacement plans, customized macro-tracking, and expert nutritional counseling for long-term vitality.`;
 
-நீண்டகால ஆரோக்கிய வெற்றிக்கு நாங்கள் முழுமையான வாழ்க்கை முறை பழக்கவழக்கங்களில் கவனம் செலுத்துகிறோம்:
-• காலை சமூக உடற்பயிற்சி சந்திப்புகள் மற்றும் குழு ஊக்கம்.
-• செயலில் உள்ள வாழ்க்கை முறை வழிகாட்டுதல் மற்றும் தினசரி கண்காணிப்பு.
-• கோச் ராஜேஷ்வரியின் அதிகாரப்பூர்வ **பேஸ்புக் பக்கம்** அல்லது **இன்ஸ்டாகிராம்** சுயவிவரம் மூலம் நேரடியாக இணைந்திருங்கள்.` :
-            `💪 **Fitness & Lifestyle Principles** 💪
+            await sendMediaMessage('program', 'program.png', programText);
+        }
+        else if (lowerText.includes('weight') || lowerText.includes('எடை') || lowerText === '3') {
+            const weightText = (currentLang === 'ta') ?
+                `⚖️ **ശാസ്ത്രபூர்வமான எடை மேலாண்மை** ⚖️\n\nபயனில்லாத டயட்டுகளால் சோர்வடைந்துவிட்டீர்களா? எங்களது ஆரோக்கியமான மற்றும் பாதுகாப்பான எடை மேலாண்மை முறை மூலம்:\n• பக்கவிளைவுகள் இல்லாத கொழுப்பு குறைப்பு\n• ஆரோக்கியமான முறையில் எடையைக் கூட்டுதல்\n• எனர்ஜி குறையாமல் உடலைப் பராமரித்தல்` :
 
-We focus on holistic lifestyle habits for long-term health success:
-• Morning community fitness meetups and group motivation.
-• Active lifestyle coaching and daily routine tracking.
-• Connect with Coach Rajeshwari directly via her official **Facebook Page** or follow daily routines on her **Instagram** profile.`;
+                `⚖️ **Advanced Weight Management** ⚖️\n\nTransform your body safely and sustainably with our structured guidance:\n• Targeted, steady, and healthy fat reduction routines\n• Lean muscle mass development and healthy weight gain\n• Continuous metabolic tracking for lasting results`;
 
-        await client.sendMessage(chatId, media, { caption: caption });
-    }
+            await sendMediaMessage('weight', 'weight.png', weightText);
+        }
+        else if (lowerText.includes('fitness') || lowerText.includes('உடற்பயிற்சி') || lowerText === '4') {
+            const fitnessText = (currentLang === 'ta') ?
+                `💪 **உடற்பயிற்சி & வாழ்க்கை முறை** 💪\n\nஉடற்பயிற்சி என்பது ஒரு வேலை அல்ல, அது ஒரு சிறந்த வாழ்க்கை முறை!\n• சுறுசுறுப்பான காலை நேர ஆன்லைன் & ஆஃப்லைன் உடற்பயிற்சி சந்திப்புகள்\n• சீரான வாழ்க்கை முறை பழக்கவழக்கங்கள் மற்றும் குழு ஊக்கம்.` :
+
+                `💪 **Fitness & Lifestyle Principles** 💪\n\nTrue fitness is a lifestyle, not a chore. We focus on holistic daily habits:\n• Engaging morning community workout meetups and high-energy group motivation\n• Sustainable active lifestyle coaching and daily routine optimization.`;
+
+            await sendMediaMessage('fitness', 'principle.png', fitnessText);
+        }
+        else if (lowerText.includes('address') || lowerText.includes('முகவரி') || lowerText === '6') {
+            const addressText = (currentLang === 'ta') ?
+                `📍 **எங்கள் மையத்தின் முகவரி & நேரம்** 📍\n\nஹெர்பலைஃப் நியூட்ரிஷன் சென்டர்,\n2A, கந்தபொடி சந்து,\nOTTO துணிக்கடை & HDFC பேங்க் எதிரில்,\nசேலம் மெயின் ரோடு அருகில்,\nகள்ளக்குறிச்சி - 606202.\n\n⏰ **நேரம்:** திங்கள் முதல் ஞாயிறு வரை, காலை 7:30 மணி முதல் 10:30 மணி வரை.` :
+
+                `📍 **Our Center Address & Timings** 📍\n\nHerbalife Nutrition Center,\n2A, Kanthapodi Lane,\nOpposite OTTO Clothing & HDFC Bank,\nNear Salem Main Road,\nKallakurichi, Tamil Nadu - 606202.\n\n⏰ **Timings:** Monday to Sunday, 7:30 AM – 10:30 AM.`;
+
+            await sock.sendMessage(chatId, { text: addressText });
+        }
+        else if (lowerText.includes('contact') || lowerText.includes('தொடர்பு') || lowerText === '7') {
+            const contactText = (currentLang === 'ta') ?
+                `📞 **கோச்சைத் தொடர்புகொள்ள** 📞\n\nசுதந்திரமான வெல்னெஸ் கோச் எஸ். ராஜேஷ்வரியை நேரடியாகத் தொடர்பு கொண்டு உங்களது ஆரோக்கிய சந்தேகங்களைக் கேட்கலாம்:\n\n📱 **போன் நம்பர்:** +91 97871 05903 / +91 63839 96873` :
+
+                `📞 **Contact Our Wellness Coach** 📞\n\nConnect directly with Independent Wellness Coach S. Rajeshwari for personalized health consultations:\n\n📱 **Phone:** +91 97871 05903 / +91 63839 96873`;
+
+            await sock.sendMessage(chatId, { text: contactText });
+        }
+        else {
+            // 5. Fallback Message (Language Specific)
+            const fallbackText = (currentLang === 'ta') ?
+                `மன்னிக்கவும், எனக்கு அது புரியவில்லை. மீண்டும் மெனுவைக் காண **'Hi'** அல்லது **'Menu'** என அனுப்பவும்.` :
+                `I'm sorry, I didn't understand that. To view the main menu again, please send **'Hi'** or **'Menu'**.`;
+
+            await sock.sendMessage(chatId, { text: fallbackText });
+        }
+    });
 }
 
-// 5. Incoming Message Listener
-client.on('message', async (msg) => {
-    const chatId = msg.from;
-    const userMessage = msg.body;
-    await handleIncomingMessage(client, chatId, userMessage);
-});
-
-// Start the client
-client.initialize();
+connectToWhatsApp();
