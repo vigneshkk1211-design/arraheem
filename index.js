@@ -5,7 +5,6 @@ const path = require('path');
 const pino = require('pino');
 const express = require('express');
 
-// Render port requirement-kaga Express server-ai start seyyuvathu
 const app = express();
 const PORT = process.env.PORT || 3000;
 
@@ -71,22 +70,8 @@ async function connectToWhatsApp() {
 
         if (sender.includes('@g.us')) return;
 
+        // மொழி கண்டறிதல் (Tamil or English)
         const isTamil = /[\u0B80-\u0BFF]/.test(text) || ['வணக்கம்', 'டீவி', 'பிரிட்ஜ்', 'ஏசி', 'மிக்ஸி', 'முகவரி', 'பேச', 'தமிழ்', 'டிவி', 'சமையல்', 'கடை', 'ஹாய்'].some(k => text.includes(k));
-
-        function getGreeting(lang) {
-            const hour = new Date().getHours();
-            if (lang === 'tamil') {
-                if (hour >= 4 && hour < 12) return "இனிய காலை வணக்கம்!";
-                if (hour >= 12 && hour < 16) return "இனிய மதிய வணக்கம்!";
-                if (hour >= 16 && hour < 20) return "இனிய மாலை வணக்கம்!";
-                return "இனிய இரவு வணக்கம்!";
-            } else {
-                if (hour >= 4 && hour < 12) return "Good Morning!";
-                if (hour >= 12 && hour < 16) return "Good Afternoon!";
-                if (hour >= 16 && hour < 20) return "Good Evening!";
-                return "Good Night!";
-            }
-        }
 
         async function sendImagesThenDescription(folderName, captionText) {
             try {
@@ -149,14 +134,14 @@ async function connectToWhatsApp() {
         else if (isKitchen) {
             const caption = isTamil ?
                 `🍳 *சமையலறை உபகரணங்கள் – வெங்கலலட்சுமி டிவி ஏஜென்சீஸ்*\n• ஹெவி டியூட்டி மிக்ஸி கிரைண்டர்கள் & வெட் கிரைண்டர்கள்\n• கிளாஸ் டாப் கேஸ் ஸ்டவ்கள் & இன்டக்ஷன் ஸ்டவ்கள்\n✅ சிறப்புப் பண்டிகை தள்ளுபடிகள் மற்றும் இலவச டெலிவரி\n📞 *தொடர்புக்கு:* +91 99762 45000` :
-                `🍳 *Kitchen & Small Appliances – Vengalakshmi TV Agencies*\n• Heavy Duty Mixer Grinders & Wet Grinders\n• Glass Top Gas Stoves & Induction Stoves\n✅ Best Festive Discounts & Free Delivery\n📞 *Contact:* +91 99762 45000`;
+                `🍳 *Kitchen Appliances – Vengalakshmi TV Agencies*\n• Heavy Duty Mixer Grinders & Wet Grinders\n• Glass Top Gas Stoves & Induction Stoves\n✅ Festive Discounts & Free Delivery\n📞 *Contact:* +91 99762 45000`;
 
             await sendImagesThenDescription('Kitchen Appliances', caption);
             return;
         }
         else if (isAC) {
             const caption = isTamil ?
-                `❄️ *ஏசி மற்றும் குளிரூட்டும் சாதனங்கள் – வெங்கலலட்சுமி டிவி ஏஜென்சீஸ்*\n• இன்வெர்ட்டர் ஸ்பிளிட் ஏசிகள் (1 டன் முதல் 2 டன் - 3 & 5 ஸ்டார்)\n• அதிவேக சீலிங் ஃபேன் மற்றும் டெசர்ட் கூலர்கள்\n✅ எளிமையான ஈஎம்ஐ மற்றும் இலவச இன்ஸ்டாலேஷன் ஆதரவு\n📞 *தொடர்புக்கு:* +91 99762 45000` :
+                `❄️ *ஏசி மற்றும் குளிரூட்டும் சாதனங்கள் – வெங்கலலட்சுமி டிவி ஏஜென்சீஸ்*\n• இன்வெர்ட்டர் ஸ்பிளிட் ஏசிகள் (1 டன் முதல் 2 டன் - 3 & 5 ஸ்டார்)\n• அதிவேக சீலிங் ஃபேன் மற்றும் கூலர்கள்\n✅ எளிமையான ஈஎம்ஐ மற்றும் இலவச இன்ஸ்டாலேஷன் ஆதரவு\n📞 *தொடர்புக்கு:* +91 99762 45000` :
                 `❄️ *AC & Cooling – Vengalakshmi TV Agencies*\n• Inverter Split ACs (1 Ton to 2 Ton - 3 & 5 Star)\n• High-Speed Fans & Coolers\n✅ Easy EMI Options & Free Installation Support\n📞 *Contact:* +91 99762 45000`;
 
             await sendImagesThenDescription('Air Ciruculation & Fans', caption);
@@ -198,12 +183,11 @@ async function connectToWhatsApp() {
         }
         else if (isWelcomeTrigger) {
             try {
-                const greeting = getGreeting(isTamil ? 'tamil' : 'english');
                 const welcomePath = path.join(__dirname, 'images', 'welcome.png');
 
                 const welcomeText = isTamil ?
-                    `╭━━━❖ *வெங்கலலட்சுமி டிவி ஏஜென்சீஸ்* ❖━━━╮\n      *கள்ளக்குறிச்சியின் நம்பகமான விற்பனையாளர்*\n╰━━━━━━━━━━━━━━━━━━━━━━━━━━╯\n\n${greeting} வெங்கலலட்சுமி டிவி ஏஜென்சீஸ்க்கு உங்களை அன்புடன் வரவேற்கிறோம்!\n1985 முதல் உங்கள் வீடுகளுக்குத் தேவையான தொழில்நுட்பம் மற்றும் மகிழ்ச்சியை வழங்கி வருகிறோம்.\n\nகள்ளக்குறிச்சிக்குள் எளிமையான ஈஎம்ஐ மற்றும் இலவச வீட்டு விநியோகம் வழங்கப்படுகிறது!\n\n👇 *பொருட்களைப் பார்க்க எண்களை அனுப்பவும்:*\n1️⃣ டிவி\n2️⃣ பிரிட்ஜ்\n3️⃣ சமையலறை உபகரணங்கள்\n4️⃣ ஏசி\n5️⃣ வாஷிங் மெஷின்\n6️⃣ கடை முகவரி & விபரங்கள்\n7️⃣ அதிகாரியிடம் பேச` :
-                    `╭━━━❖ *VENGALAKSHMI TV AGENCIES* ❖━━━╮\n      *Kallakurichi's Trusted Retailer*\n╰━━━━━━━━━━━━━━━━━━━━━━━━━━╯\n\n${greeting} Welcome to Vengalakshmi T.V. Agencies!\nBringing comfort, technology, and happiness to your homes since 1985.\n\nWe offer Easy EMIs and Free Home Delivery within Kallakurichi!\n\n👇 *CHOOSE A CATEGORY (Type Number):*\n1️⃣ TV\n2️⃣ Fridges\n3️⃣ Kitchen Appliances\n4️⃣ Ac\n5️⃣ Washing Machines\n6️⃣ Store Address & Info\n7️⃣ Speak with Advisor`;
+                    `🌟✨ *வெங்கலலட்சுமி டிவி ஏஜென்சீஸ்* ✨🌟\n🔥 *கள்ளக்குறிச்சியின் நம்பகமான #1 எலக்ட்ரானிக்ஸ் ஷோரூம்* 🔥\n━━━━━━━━━━━━━━━━━━━━━━━\n\nவணக்கம் நண்பரே! 🙏 எங்களது அதிகாரப்பூர்வ வாட்ஸ்அப் சேவைக்கு உங்களை அன்புடன் வரவேற்கிறோம்! 🤝\n\n🏆 1985 முதல் மக்களின் நம்பிக்கையோடும், சிறந்த தரத்துடனும் உங்கள் இல்லங்களுக்குத் தேவையான நவீன சாதனங்களை வழங்கி வருகிறோம்.\n\n💥 *நமது சிறப்பம்சங்கள்:*\n✨ 0% வட்டி மற்றும் எளிமையான EMI வசதி 💳\n✨ கள்ளக்குறிச்சி சுற்றியுள்ள பகுதிகளில் இலவச வீட்டு விநியோகம் (Free Home Delivery) 🚚\n✨ நேரடி டெமோ மற்றும் சிறந்த விற்பனைக்குப் பின் சேவை (After Sales Support) 🛠️\n\n👇 *உங்களுக்குத் தேவையான பொருட்களைப் பார்க்க கீழே உள்ள எண்களை அனுப்பவும்:*\n\n1️⃣ 📺 டிவி & எல்இடி திரைகள் (Smart & 4K TVs)\n2️⃣ ❄️ குளிர்சாதன பெட்டிகள் (Fridges)\n3️⃣ 🍳 சமையலறை உபகரணங்கள் (Mixer, Grinder & Stoves)\n4️⃣ 🌬️ ஏசி & குளிர்விப்பான்கள் (AC & Fans)\n5️⃣ 🧺 வாஷிங் மெஷின் (Washing Machines)\n6️⃣ 📍 கடை முகவரி & லொகேஷன் பார்க்க\n7️⃣ 🗣️ எங்களின் நேரடி விற்பனை அதிகாரியிடம் பேச\n\n💬 *உங்களுக்கு எந்தப் பொருள் பற்றிய விவரங்கள் வேண்டும்? உடனே அந்த எண்ணை (1-7) தட்டச்சு செய்யவும்!* 👇` :
+                    `🌟✨ *VENGALAKSHMI TV AGENCIES* ✨🌟\n🔥 *Kallakurichi's Most Trusted Electronics Showroom* 🔥\n━━━━━━━━━━━━━━━━━━━━━━━\n\nWelcome! 🙏 Thank you for reaching out to us. We are thrilled to assist you! 🤝\n\n🏆 Bringing the best comfort, latest technology, and happiness to your homes since 1985.\n\n💥 *Why Choose Us?*\n✨ Easy EMI & 0% Interest Options 💳\n✨ Free Home Delivery within Kallakurichi 🚚\n✨ Direct Demo & Reliable After-Sales Support 🛠️\n\n👇 *PLEASE CHOOSE A CATEGORY (Type Number):*\n\n1️⃣ 📺 TV & Entertainment (Smart TVs)\n2️⃣ ❄️ Refrigerators & Coolers (Fridges)\n3️⃣ 🍳 Kitchen & Small Appliances\n4️⃣ 🌬️ AC & Air Circulation (Fans)\n5️⃣ 🧺 Washing Machines & Laundry\n6️⃣ 📍 Store Address & Google Map\n7️⃣ 🗣️ Speak with our Sales Advisor\n\n💬 *Type the number (1-7) to explore our collections!* 👇`;
 
                 if (fs.existsSync(welcomePath)) {
                     try {
