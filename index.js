@@ -29,7 +29,8 @@ async function startWhatsAppBot() {
 
     const sock = makeWASocket({
         auth: state,
-        printQRInTerminal: false
+        printQRInTerminal: false,
+        browser: ["Ubuntu", "Chrome", "22.04.4"]
     });
 
     sock.ev.on('creds.update', saveCreds);
@@ -49,7 +50,7 @@ async function startWhatsAppBot() {
                 startWhatsAppBot();
             }
         } else if (connection === 'open') {
-            console.log('✅ Arraheem WhatsApp Chatbot connected successfully with Bilingual Support!');
+            console.log('✅ Arraheem WhatsApp Chatbot connected successfully!');
         }
     });
 
@@ -91,9 +92,9 @@ async function startWhatsAppBot() {
         }
 
         let welcomeText = isTamilUser ?
-            `🏠 வணக்கம்! Arraheem Furnitures, கள்ளக்குறிச்சிக்கு உங்களை அன்புடன் வரவேற்கிறோம்! ✨\n\n` +
-            `ஸ்டைலான பர்னிச்சர்கள், வீட்டு உபயோகப் பொருட்கள் மற்றும் முழுமையான ஹோம் சொல்யூஷன்களுக்கான ஒரே இடம். 🎯\n\n` +
-            `எங்கள் தயாரிப்புகள், பர்னிச்சர் கலெக்ஷன்ஸ், வீட்டு உபயோகப் பொருட்கள், இஎம்ஐ வசதிகள், திருமண சீர்வரிசை காம்போ பேக்கேஜ்கள், டெலிவரி மற்றும் காண்டாக்ட் விவரங்களை நீங்கள் தெரிந்துகொள்ள உதவ முடியும். 😊\n\n` +
+            `🏠 வணக்கம்! Arraheem Furnitures, கள்ளக்குறிச்சிக்கு உங்களை அன்புடன் வரவேற்கிறோம்!\n` +
+            `✨ ஸ்டைலான பர்னிச்சர்கள், வீட்டு உபயோகப் பொருட்கள் மற்றும் முழுமையான ஹோம் சொல்யூஷன்களுக்கான ஒரே இடம். 🎯\n\n` +
+            `😍 எங்களுடைய தயாரிப்புகள், பர்னிச்சர் கலெக்ஷன்ஸ், வீட்டு உபயோகப் பொருட்கள், இஎம்ஐ வசதிகள், திருமண சீர்வரிசை காம்போ பேக்கேஜ்கள், டெலிவரி மற்றும் காண்டாக்ட் விவரங்களை நீங்கள் தெரிந்துகொள்ள உதவ முடியும். 😊\n\n` +
             `கீழ்க்கண்ட பிரிவுகளைப் பார்க்கப் பெயரை டைப் செய்யவும்:\n` +
             `- bedroom\n` +
             `- ceiling\n` +
@@ -158,10 +159,16 @@ async function startWhatsAppBot() {
         const lowerMsg = msgBody.trim().toLowerCase();
         let userIsTamil = isTamil(msgBody);
 
-        // Explicit greeting triggers
-        if (lowerMsg.includes('hi') || lowerMsg.includes('hello') || lowerMsg.includes('menu') || lowerMsg.includes('வணக்கம்') || lowerMsg.includes('ஸ்டார்ட்') || lowerMsg.includes('start') || lowerMsg.includes('everyone')) {
-            await sendWelcomeMessage(senderID, userIsTamil);
-            return;
+        // Auto-Welcome for ANY initial message (Hi, Hello, Everyone, etc.) or explicit triggers
+        if (lowerMsg.includes('hi') || lowerMsg.includes('hello') || lowerMsg.includes('menu') || lowerMsg.includes('வணக்கம்') || lowerMsg.includes('ஸ்டார்ட்') || lowerMsg.includes('start') || lowerMsg.includes('everyone') || lowerMsg.length > 0) {
+
+            // Check if it's a specific category request first, otherwise send welcome
+            if (lowerMsg.includes('sofa') || lowerMsg.includes('bedroom') || lowerMsg.includes('ceiling') || lowerMsg.includes('dining') || lowerMsg.includes('kitchen') || lowerMsg.includes('matters') || lowerMsg.includes('mattress') || lowerMsg.includes('office') || lowerMsg.includes('tv') || lowerMsg.includes('fridge') || lowerMsg.includes('ac') || lowerMsg.includes('speaker') || lowerMsg.includes('address') || lowerMsg.includes('contact')) {
+                // Let it flow to category handlers below
+            } else {
+                await sendWelcomeMessage(senderID, userIsTamil);
+                return;
+            }
         }
 
         if (lowerMsg.includes('address') || lowerMsg.includes('முகவரி') || lowerMsg.includes('இடம்')) {
@@ -247,7 +254,7 @@ async function startWhatsAppBot() {
             await sendCategoryImagesThenText(senderID, 'speaker', text);
         }
         else {
-            // Default fallback: send Welcome Image + Welcome Description first, then notify admin
+            // Default fallback: send Welcome Message first, then notify admin
             await sendWelcomeMessage(senderID, userIsTamil);
 
             let adminAlert = `🚨 *New Unmatched Query Alert!*\n\nFrom User: ${senderID}\nMessage: "${msgBody}"`;
